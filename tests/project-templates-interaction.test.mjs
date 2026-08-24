@@ -78,6 +78,7 @@ async function mount(overrides = {}) {
         onDraftChange: noop,
         onRecommendedTargetChange: noop,
         onSave: () => template.currentRevisionId,
+        onSaveAndInsert: () => template.currentRevisionId,
         onRename: () => true,
         onArchive: (templateId, onArchived) => onArchived?.(),
         onRestore: noop,
@@ -376,6 +377,39 @@ test("creates a checkpoint with an optional revision name", async () => {
 
     assert.equal(saves.length, 1);
     assert.equal(saves[0].at(-1), "Clarify the request");
+  } finally {
+    await view.close();
+  }
+});
+
+test("creates a revision before adding an autosaved draft to the conversation", async () => {
+  const savesAndInserts = [];
+  const view = await mount({
+    templates: [{
+      ...template,
+      draft: {
+        sourceRevisionId: template.currentRevisionId,
+        messages: [{ role: "user", content: "Explain {{topic}} clearly." }],
+        variableDefaults: { topic: "branching" },
+      },
+    }],
+    onSaveAndInsert: (...args) => {
+      savesAndInserts.push(args);
+      return "template-revision_question-2";
+    },
+  });
+  try {
+    const insert = view.container.querySelector(".template-insert-bar button");
+    assert.equal(insert?.textContent.trim(), "Create revision and add");
+
+    await view.click(insert);
+
+    assert.equal(savesAndInserts.length, 1);
+    assert.equal(savesAndInserts[0][0], template.id);
+    assert.deepEqual(savesAndInserts[0][2], [
+      { role: "user", content: "Explain {{topic}} clearly." },
+    ]);
+    assert.equal(savesAndInserts[0].at(-1), 0);
   } finally {
     await view.close();
   }
