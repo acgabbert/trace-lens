@@ -435,6 +435,33 @@ test("missing model evidence degrades to authored-only instead of inferring from
   );
 });
 
+test("an unsafe n8n expression warning identifies the field and parse failure", async () => {
+  const execution = clone(
+    await executionFixture("basic-llm-chain-success", "execution-success.json"),
+  );
+  const workflowData = dataRecord(execution).workflowData as {
+    nodes: Array<{ name: string; parameters: { text?: string } }>;
+  };
+  workflowData.nodes.find(
+    ({ name }) => name === "Compound prompt cases",
+  )!.parameters.text = "=Before {{ $json.topic";
+
+  const results = await extractN8nPromptCandidates(execution);
+  const compound = results.find(
+    (result) =>
+      result.status === "candidate" &&
+      result.candidate.invocation.name === "Compound prompt cases",
+  );
+  assert.ok(compound?.status === "candidate");
+  const issue = compound.candidate.warnings.find(
+    ({ code }) => code === "invalid-expression-regions",
+  );
+  assert.equal(
+    issue?.message,
+    'Expression issue in parameters.text at character 8: Expression is missing its closing }} delimiter. Reusable template import is unavailable.',
+  );
+});
+
 test("missing retained execution data falls back to current authored text with an explicit compatibility warning", async () => {
   const workflow = await workflowFixture("basic-llm-chain-success");
   const execution: N8nExecutionDetail = {

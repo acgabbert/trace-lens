@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   ExternalPromptCandidate,
   ImportFidelity,
+  ImportWarning,
 } from "../packages/core/src/external-prompt-import.ts";
 import {
   canImportExternalPromptAsTemplate,
@@ -154,6 +155,37 @@ function candidateFor(
     : undefined;
 }
 
+function expressionIssues(
+  candidate: ExternalPromptCandidate | undefined,
+): ImportWarning[] {
+  return candidate?.warnings.filter(
+    ({ code }) => code === "invalid-expression-regions",
+  ) ?? [];
+}
+
+function initialReviewTab(
+  candidate: ExternalPromptCandidate | undefined,
+): ReviewTab {
+  if (expressionIssues(candidate).length > 0) return "warnings";
+  return candidate && !candidate.resolved ? "authored" : "resolved";
+}
+
+export function N8nImportIssueNotice({
+  issues,
+}: {
+  issues: ImportWarning[];
+}) {
+  if (issues.length === 0) return null;
+  return (
+    <div className="n8n-import-issue-notice" role="alert">
+      <strong>Expression issue</strong>
+      {issues.map((issue, index) => (
+        <span key={`${issue.code}-${index}`}>{issue.message}</span>
+      ))}
+    </div>
+  );
+}
+
 function defaultExtractionIndex(
   extractions: N8nPromptExtraction[],
 ): number | undefined {
@@ -228,6 +260,7 @@ export function N8nImportModal({
     candidate?.resolved && candidate.fidelity !== "authored-only",
   );
   const templateImportable = canImportExternalPromptAsTemplate(candidate);
+  const candidateExpressionIssues = expressionIssues(candidate);
   const detailAvailabilityMessage = detailAvailabilityCopy(
     detail?.detailAvailability,
   );
@@ -394,11 +427,9 @@ export function N8nImportModal({
         extractionIndex === undefined
           ? undefined
           : next.extractions[extractionIndex];
-      setReviewTab(
-        extraction?.status === "candidate" && !extraction.candidate.resolved
-          ? "authored"
-          : "resolved",
-      );
+      setReviewTab(initialReviewTab(
+        extraction?.status === "candidate" ? extraction.candidate : undefined,
+      ));
       setDetailState("ready");
     } catch (caught) {
       const message = errorMessage(caught, "Could not inspect this execution.");
@@ -448,9 +479,7 @@ export function N8nImportModal({
       setSelectedExecution(next.execution);
       setDetail(next);
       setSelectedExtractionIndex(extractionIndex);
-      setReviewTab(
-        candidate && !candidate.resolved ? "authored" : "resolved",
-      );
+      setReviewTab(initialReviewTab(candidate));
       setExecutionState("ready");
       setDetailState("ready");
       setLinkState("ready");
@@ -753,14 +782,20 @@ export function N8nImportModal({
                             type="button"
                             onClick={() => {
                               setSelectedExtractionIndex(index);
-                              setReviewTab("resolved");
+                              setReviewTab(initialReviewTab(
+                                extraction.status === "candidate"
+                                  ? extraction.candidate
+                                  : undefined,
+                              ));
                             }}
                           >
                             <strong>{invocationLabel(extraction)}</strong>
                             <span>
                               {extraction.status === "unsupported"
                                 ? "Unsupported"
-                                : extraction.candidate.fidelity.replaceAll("-", " ")}
+                                : expressionIssues(extraction.candidate).length > 0
+                                  ? `Expression issue · ${extraction.candidate.fidelity.replaceAll("-", " ")}`
+                                  : extraction.candidate.fidelity.replaceAll("-", " ")}
                             </span>
                           </button>
                         ))}
@@ -993,17 +1028,21 @@ export function N8nImportModal({
               </div>
             </div>
             <footer className="n8n-import-footer">
-              <p>
-                {candidate
-                  ? templateImportable && resolvedImportable
-                    ? "Choose a reusable project prompt or the exact resolved execution snapshot."
-                    : templateImportable
-                      ? "Import creates a reusable project prompt; unresolved values must be filled before running."
-                      : resolvedImportable
-                        ? "Import creates a child revision from the resolved execution snapshot."
-                        : "This candidate has no safely importable prompt projection."
-                  : "Choose a supported execution-backed invocation to continue."}
-              </p>
+              {candidateExpressionIssues.length > 0 ? (
+                <N8nImportIssueNotice issues={candidateExpressionIssues} />
+              ) : (
+                <p>
+                  {candidate
+                    ? templateImportable && resolvedImportable
+                      ? "Choose a reusable project prompt or the exact resolved execution snapshot."
+                      : templateImportable
+                        ? "Import creates a reusable project prompt; unresolved values must be filled before running."
+                        : resolvedImportable
+                          ? "Import creates a child revision from the resolved execution snapshot."
+                          : "This candidate has no safely importable prompt projection."
+                    : "Choose a supported execution-backed invocation to continue."}
+                </p>
+              )}
               <button
                 className="button secondary"
                 disabled={importing}
