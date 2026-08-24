@@ -255,9 +255,15 @@ function authoredTextField(
   };
 }
 
+interface N8nExpressionIssue {
+  authoredPath: string;
+  character: number;
+  reason: string;
+}
+
 export interface N8nExpressionRegionScan {
   bindings: ExpressionBinding[];
-  invalid: boolean;
+  issues: N8nExpressionIssue[];
 }
 
 /**
@@ -269,14 +275,23 @@ function scanExpressionBindings(
   authored: AuthoredPromptField,
 ): N8nExpressionRegionScan {
   if (authored.syntax !== "external-expression") {
-    return { bindings: [], invalid: false };
+    return { bindings: [], issues: [] };
   }
   const contentStart = authored.contentSpan?.startOffset ?? 0;
   const contentEnd = authored.contentSpan?.endOffset ?? authored.text.length;
   const scan: N8nExpressionScan = scanN8nExpressionRegions(
     authored.text.slice(contentStart, contentEnd),
   );
-  if (!scan.ok) return { bindings: [], invalid: true };
+  if (!scan.ok) {
+    return {
+      bindings: [],
+      issues: [{
+        authoredPath: authored.path,
+        character: scan.errorOffset + 1,
+        reason: scan.reason,
+      }],
+    };
+  }
   return {
     bindings: scan.regions.map((region) => ({
       authoredPath: authored.path,
@@ -288,8 +303,19 @@ function scanExpressionBindings(
       },
       status: "missing",
     })),
-    invalid: false,
+    issues: [],
   };
+}
+
+function invalidExpressionWarnings(
+  issues: N8nExpressionIssue[],
+): ImportWarning[] {
+  return issues.map((issue) =>
+    warning(
+      "invalid-expression-regions",
+      `Expression issue in ${issue.authoredPath} at character ${issue.character}: ${issue.reason} Reusable template import is unavailable.`,
+    ),
+  );
 }
 
 function sourceEvidence(
@@ -370,14 +396,9 @@ async function authoredOnlyCandidate(
   }
   const authoredFields = Array.isArray(authored) ? authored : [authored];
   const expressionScans = authoredFields.map(scanExpressionBindings);
-  if (expressionScans.some(({ invalid }) => invalid)) {
-    warnings.push(
-      warning(
-        "invalid-expression-regions",
-        "The authored n8n expression regions could not be parsed safely, so reusable template import is unavailable.",
-      ),
-    );
-  }
+  warnings.push(...invalidExpressionWarnings(
+    expressionScans.flatMap(({ issues }) => issues),
+  ));
   return {
     status: "candidate",
     candidate: await createExternalPromptCandidate(
@@ -686,7 +707,7 @@ const basicLlmChainExtractor: N8nPromptExtractor = {
     );
     const soleExpression = expressionScan.bindings[0];
     const bindings =
-      !expressionScan.invalid &&
+      expressionScan.issues.length === 0 &&
       expressionScan.bindings.length === 1 &&
       soleExpression &&
       semanticText.trim() === soleExpression.expression
@@ -721,14 +742,7 @@ const basicLlmChainExtractor: N8nPromptExtractor = {
         ),
       );
     }
-    if (expressionScan.invalid) {
-      warnings.push(
-        warning(
-          "invalid-expression-regions",
-          "The authored n8n expression regions could not be parsed safely, so reusable template import is unavailable.",
-        ),
-      );
-    }
+    warnings.push(...invalidExpressionWarnings(expressionScan.issues));
     return [
       {
         status: "candidate",
@@ -751,7 +765,7 @@ function expressionEvidence(
   evidencePath: string,
 ): {
   bindings: ExpressionBinding[];
-  invalid: boolean;
+  issues: N8nExpressionRegionScan["issues"];
 } {
   const scans = authoredFields.map(scanExpressionBindings);
   const bindings = scans.flatMap((scan, fieldIndex) => {
@@ -768,7 +782,7 @@ function expressionEvidence(
     const soleExpression = scan.bindings[0];
     if (
       resolved &&
-      !scan.invalid &&
+      scan.issues.length === 0 &&
       scan.bindings.length === 1 &&
       soleExpression &&
       semanticText.trim() === soleExpression.expression
@@ -789,7 +803,7 @@ function expressionEvidence(
   });
   return {
     bindings,
-    invalid: scans.some(({ invalid }) => invalid),
+    issues: scans.flatMap(({ issues }) => issues),
   };
 }
 
@@ -1047,14 +1061,7 @@ function createAiAgentExtractor(version: number): N8nPromptExtractor {
           ),
         );
       }
-      if (expression.invalid) {
-        warnings.push(
-          warning(
-            "invalid-expression-regions",
-            "The authored n8n expression regions could not be parsed safely, so reusable template import is unavailable.",
-          ),
-        );
-      }
+      warnings.push(...invalidExpressionWarnings(expression.issues));
       return [
         {
           status: "candidate",

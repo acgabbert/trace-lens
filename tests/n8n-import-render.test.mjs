@@ -41,6 +41,28 @@ async function renderExecutionLinkSelector() {
   );
 }
 
+async function renderExpressionIssueNotice() {
+  const [
+    { N8nImportIssueNotice },
+    { renderToStaticMarkup },
+    { createElement },
+  ] = await Promise.all([
+    ssrLoadModule("/app/n8n-import-modal.client.tsx"),
+    import("react-dom/server"),
+    import("react"),
+  ]);
+  return renderToStaticMarkup(
+    createElement(N8nImportIssueNotice, {
+      issues: [{
+        code: "invalid-expression-regions",
+        severity: "warning",
+        message:
+          "Expression issue in parameters.text at character 8: Expression is missing its closing }} delimiter. Reusable template import is unavailable.",
+      }],
+    }),
+  );
+}
+
 test("renders a focused and safe n8n import workspace shell", async () => {
   const html = await renderImportModal();
   assert.match(html, /role="dialog"/);
@@ -57,6 +79,23 @@ test("renders the pasted execution-link selector", async () => {
   assert.match(html, /aria-label="n8n execution link"/);
   assert.match(html, />Review</);
   assert.doesNotMatch(html, /undefined|NaN|Infinity/);
+});
+
+test("keeps the specific expression issue in the persistent import footer", async () => {
+  const html = await renderExpressionIssueNotice();
+  assert.match(html, /role="alert"/);
+  assert.match(html, /Expression issue/);
+  assert.match(html, /parameters\.text at character 8/);
+  assert.match(html, /missing its closing \}\} delimiter/);
+
+  const stylesheet = await readFile(
+    new URL("../app/globals.css", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    stylesheet,
+    /\.n8n-import-issue-notice\s*\{[^}]*margin-right:\s*auto;/s,
+  );
 });
 
 test("keeps the model recommendation checkbox from consuming the label width", async () => {

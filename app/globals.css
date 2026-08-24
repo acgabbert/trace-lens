@@ -2862,6 +2862,19 @@ output {
   color: var(--text-muted);
 }
 
+.n8n-import-issue-notice {
+  min-width: 0;
+  margin-right: auto;
+  display: grid;
+  gap: var(--space-3xs);
+  color: var(--danger);
+  line-height: var(--leading-normal);
+}
+
+.n8n-import-issue-notice span {
+  color: var(--text-secondary);
+}
+
 .confirmation-backdrop {
   position: fixed;
   inset: 0;
@@ -6684,6 +6697,10 @@ main {
   }
 
   .n8n-import-footer p {
+    flex: 1 0 100%;
+  }
+
+  .n8n-import-issue-notice {
     flex: 1 0 100%;
   }
 
