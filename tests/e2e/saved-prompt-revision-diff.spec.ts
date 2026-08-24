@@ -68,7 +68,7 @@ test("a historical prompt revision can be edited into a new revision with an exa
 
   await editor.getByLabel("Prompt content").fill("Triage {{incident}} for the on-call engineer.");
   await editor.getByLabel("{{incident}}").fill("database outage");
-  await editor.getByRole("button", { name: "Create revision" }).click();
+  await editor.getByRole("button", { name: "Create revision", exact: true }).click();
 
   // A save forces the diff open once, to confirm what just changed.
   await expect(diffToggle).toHaveAttribute("aria-expanded", "true");
@@ -131,11 +131,54 @@ test("prompt drafts and checkpoint names survive library navigation", async ({ p
   await expect(editor.getByLabel("{{incident}}")).toHaveValue("database outage");
   await expect(editor.getByLabel("Revision name")).toHaveValue("Make triage concise");
 
-  await editor.getByRole("button", { name: "Create revision" }).click();
+  await editor.getByRole("button", { name: "Create revision", exact: true }).click();
   await expect(editor.locator(".template-revision-field select option").first()).toContainText(
     "Make triage concise",
   );
   await expect(editor.locator(".template-revision-field select")).not.toHaveValue("draft");
+});
+
+test("adding an autosaved prompt draft creates and pins that draft", async ({ page }) => {
+  let project = createProjectFile({
+    name: "Saved prompt insertion fixture",
+    request: {
+      provider: "openai-compatible",
+      endpoint: BUFFERED_FIXTURE_ENDPOINT,
+      model: "buffered-test-model",
+      messages: [{ role: "user", content: "Existing conversation message" }],
+    },
+    idSuffix: "saved-prompt-insertion",
+    createdAt: "2026-08-24T12:00:00.000Z",
+  });
+  project = createPromptTemplate(project, {
+    name: "Draft insertion",
+    messages: [{ role: "user", content: "Example prompt content" }],
+    idSuffix: "draft-insertion",
+    revisionIdSuffix: "draft-insertion-1",
+    createdAt: "2026-08-24T12:00:01.000Z",
+  });
+
+  await seedProfile(page, { instanceId: "profile-instance-buffered" });
+  await page.goto("/");
+  await waitForHydration(page);
+  await importProject(page, project, "Saved prompt insertion fixture");
+  await openMode(page, "Compose");
+  await page.getByRole("tab", { name: /Prompts/ }).click();
+
+  const editor = page.locator(".template-editor");
+  await editor.getByLabel("Prompt content").fill("The autosaved draft content");
+  await editor.getByRole("button", { name: "Create revision and add" }).click();
+
+  await expect(page.getByRole("tab", { name: /Messages/ })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(page.locator(".template-use-card")).toContainText(
+    "The autosaved draft content",
+  );
+  await expect(page.locator(".template-use-card")).not.toContainText(
+    "Example prompt content",
+  );
 });
 
 test("the prompt header keeps its metadata controls usable beside revision actions", async ({ page }) => {

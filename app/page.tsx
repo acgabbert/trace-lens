@@ -329,12 +329,27 @@ function HomeContent() {
   const [streamingPreferred, setStreamingPreferred] = useState(true);
   const [streamingPreferenceLoaded, setStreamingPreferenceLoaded] =
     useState(false);
+  const streamingPreferenceChangedRef = useRef(false);
   const project = useProjectWorkspace({
     activeProfile,
     profiles,
     profilesLoaded,
     onActivateProfile: selectProfile,
     folderAccessAvailable,
+    createFreshProject() {
+      return createProjectFile({
+        name: "Untitled Inference Lens project",
+        request: {
+          provider: "openai-compatible",
+          endpoint: activeProfile.endpoint,
+          model: activeProfile.model,
+          messages: createInitialMessages(chooseDefaultUserPrompt()),
+          temperature: activeProfile.temperature,
+          responseMode: activeResponseMode,
+          capabilities: activeCapabilities,
+        },
+      });
+    },
     createProject() {
       return createProjectFile({
         name: "Untitled Inference Lens project",
@@ -533,7 +548,9 @@ function HomeContent() {
       const saved = window.localStorage.getItem(
         STREAMING_PREFERENCE_STORAGE_KEY,
       );
-      if (saved === "buffered") setStreamingPreferred(false);
+      if (!streamingPreferenceChangedRef.current && saved === "buffered") {
+        setStreamingPreferred(false);
+      }
       setStreamingPreferenceLoaded(true);
     }, 0);
     return () => window.clearTimeout(preferenceId);
@@ -554,6 +571,11 @@ function HomeContent() {
       streamingPreferred ? "streaming" : "buffered",
     );
   }, [streamingPreferred, streamingPreferenceLoaded]);
+
+  function changeStreamingPreference(streaming: boolean): void {
+    streamingPreferenceChangedRef.current = true;
+    setStreamingPreferred(streaming);
+  }
 
   useEffect(() => {
     if (!toolRegistryLoaded) return;
@@ -1787,7 +1809,7 @@ function HomeContent() {
             favoriteModels: activeProfile.favoriteModels ?? [],
             onModelChange: setEditorModel,
             onTemperatureChange: setEditorTemperature,
-            onStreamingPreferenceChange: setStreamingPreferred,
+            onStreamingPreferenceChange: changeStreamingPreference,
             onLoadModels: (force) => void loadModels(force),
             onToggleFavoriteModel: (model) =>
               updateActiveProfile({
@@ -1967,7 +1989,11 @@ function HomeContent() {
       )}
       {projectCreationMode && (
         <ProjectCreationDialog
-          initialName={projectFile?.name ?? "Untitled Inference Lens project"}
+          initialName={
+            projectCreationMode === "new"
+              ? "Untitled Inference Lens project"
+              : projectFile?.name ?? "Untitled Inference Lens project"
+          }
           onClose={() => setProjectCreationMode(undefined)}
           onCreate={(options) => {
             if (projectCreationMode === "new") {

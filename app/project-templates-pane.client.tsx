@@ -55,6 +55,15 @@ interface ProjectTemplatesPaneProps {
     recommendedTarget?: PromptTemplateRecommendedTarget,
     revisionName?: string,
   ): PromptTemplateRevisionId;
+  onSaveAndInsert(
+    templateId: PromptTemplateId,
+    name: string,
+    messages: PromptTemplateMessages,
+    defaults: Record<string, string>,
+    recommendedTarget: PromptTemplateRecommendedTarget | undefined,
+    revisionName: string | undefined,
+    itemIndex: number,
+  ): PromptTemplateRevisionId;
   onDraftChange(
     templateId: PromptTemplateId,
     sourceRevisionId: PromptTemplateRevisionId,
@@ -99,6 +108,7 @@ export function ProjectTemplatesPane({
   onOpenN8nImport,
   onCreate,
   onSave,
+  onSaveAndInsert,
   onDraftChange,
   onRecommendedTargetChange,
   onRename,
@@ -809,12 +819,50 @@ export function ProjectTemplatesPane({
               </label>
               <button
                 className="button primary"
-                type="button"
-                onClick={() =>
-                  onInsert(selected.id, Math.min(insertionIndex, itemCount))
+                disabled={
+                  draftChanged && (
+                    !name.trim() ||
+                    discovery.diagnostics.length > 0 ||
+                    sensitiveVariables.length > 0
+                  )
                 }
+                type="button"
+                onClick={() => {
+                  const itemIndex = Math.min(insertionIndex, itemCount);
+                  if (!draftChanged) {
+                    onInsert(selected.id, itemIndex);
+                    return;
+                  }
+                  const saved = onSaveAndInsert(
+                    selected.id,
+                    name,
+                    messages,
+                    Object.fromEntries(
+                      discovery.variables.flatMap(({ name }) =>
+                        Object.hasOwn(defaults, name)
+                          ? [[name, defaults[name]!]]
+                          : [],
+                      ),
+                    ),
+                    recommendedModel.trim() &&
+                      recommendedConnectionRequirementId
+                      ? {
+                          connectionRequirementId:
+                            recommendedConnectionRequirementId,
+                          model: recommendedModel.trim(),
+                        }
+                      : undefined,
+                    revisionName || undefined,
+                    itemIndex,
+                  );
+                  setCandidateSourceRevisionId(undefined);
+                  setViewedRevisionId(saved);
+                  setComparedRevisionId(viewedRevision.id);
+                  setRevisionName("");
+                  setDiffOpen(true);
+                }}
               >
-                Add to conversation
+                {draftChanged ? "Create revision and add" : "Add to conversation"}
               </button>
             </footer>}
           </>

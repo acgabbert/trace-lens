@@ -89,6 +89,8 @@ export function useProjectWorkspace(input: {
   /** Selects a resolved local mapping as part of project adoption. */
   onActivateProfile(profileId: string): void;
   folderAccessAvailable: boolean;
+  /** Creates a new, independent project when another project is already open. */
+  createFreshProject(): ProjectFile;
   createProject(): ProjectFile;
   currentDraft(): UpdateProjectDraft;
   onApplyDraft(draft: ProjectDraft): void;
@@ -106,6 +108,7 @@ export function useProjectWorkspace(input: {
     profilesLoaded,
     onActivateProfile,
     folderAccessAvailable,
+    createFreshProject,
     createProject,
     currentDraft,
     onApplyDraft,
@@ -474,16 +477,22 @@ export function useProjectWorkspace(input: {
     setProjectError(error instanceof Error ? error.message : fallback);
   }
 
-  function namedProject(options: ProjectCreationOptions): ProjectFile {
+  function namedProject(
+    project: ProjectFile,
+    options: ProjectCreationOptions,
+  ): ProjectFile {
     return {
-      ...currentProjectDocument(),
+      ...project,
       name: options.name.trim() || "Untitled Inference Lens project",
     };
   }
 
   async function newProjectFolder(options: ProjectCreationOptions): Promise<void> {
     try {
-      const project = namedProject(options);
+      const project = namedProject(
+        projectFile ? createFreshProject() : currentProjectDocument(),
+        options,
+      );
       const opened = await createProjectFolder(project, options);
       if (opened) {
         applyProjectDocument(opened.project, opened.handle, activeProfile.id);
